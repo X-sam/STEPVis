@@ -6,6 +6,8 @@ void markme(RoseObject * obj);
 void graphaddnode(Microsoft::Msagl::Drawing::Graph^ graph, String^ out, String^ in, String^ name="");
 void graphatts(RoseObject* obj, Microsoft::Msagl::Drawing::Graph^ graph);
 void parsetonode(RoseObject*parent, RoseObject*child, String^ attstr, Microsoft::Msagl::Drawing::Graph^ graph);
+void graphdepth(RoseObject* obj, Microsoft::Msagl::Drawing::Graph^ graph, int depth = 0);
+int maxdepth = 0;
 int main(int argc, char ** argv)
 {
     if (argc < 3)
@@ -24,7 +26,7 @@ int main(int argc, char ** argv)
 	Console::WriteLine("invalid depth parameter.");
 	return -1;
     }
-
+    maxdepth = depth;
     ROSE.quiet(ROSE_TRUE);
     FILE * f = fopen("rlog.txt","w");
     if (nullptr == f) return -1;
@@ -41,58 +43,11 @@ int main(int argc, char ** argv)
     }
     RoseCursor curs;
     curs.traverse(d);
+    RoseObject * obj;
     curs.domain(ROSE_DOMAIN(stp_draughting_model));
-    RoseObject * obj = curs.next();
-    if (obj == nullptr)
-	return -1;
-    printf("Got a %s\n", obj->domain()->name());
-    ListOfRoseObject lst;
-    obj->findObjects(&lst, depth, false);
-    lst.add(obj);
-    RoseMark marker= rose_mark_begin();
-    //rose_compute_backptrs(d);
-    for (unsigned i = 0, sz = lst.size(); i < sz;i++)
+    while(obj = curs.next())
     {
-	obj = lst[i];
-	if (nullptr == obj) continue;
-	if (obj->isa(ROSE_DOMAIN(RoseUnion)))
-	{
-	    obj = rose_get_nested_object(ROSE_CAST(RoseUnion, obj));
-	    if (nullptr == obj) continue; //Select with a non-object type
-	}
-	if (obj->isa(ROSE_DOMAIN(RoseAggregate)))
-	{
-	    for (unsigned j = 0, jsz = obj->size(); j < jsz; j++)
-	    {
-		if (obj->getObject(j) == nullptr) graphatts(obj,graph);//not an aggregate of objects.
-		else graphatts(obj->getObject(j),graph);
-	    }
-	}
-	if (obj->isa(ROSE_DOMAIN(RoseStructure))) graphatts(obj,graph);
-	//if (rose_is_marked(obj)) continue;
-	//markme(obj);
-	/*auto eid = obj->entity_id();
-	for (auto i = 0u, sz = obj->attributes()->size(); i < sz; i++)
-	{
-	    auto sobj = obj->getObject(obj->attributes()->get(i));
-	    if (nullptr == sobj) continue;
-	    auto seid = sobj->entity_id();
-	    if (seid != 0)
-		graphaddnode(graph, gcnew String(obj->domain()->name()), gcnew String(sobj->domain()->name()), gcnew String(obj->attributes()->get(i)->name()));
-	}
-	if (false)//(obj->domain()->typeIsEntity())
-	{
-	    RoseBackptrs *rbp = rose_get_backptrs(obj);
-	    for (auto i = 0u, sz = rbp->size(); i < sz; i++)
-	    {
-		auto seid = rbp->get(i)->entity_id();
-		if (seid != 0)
-		{
-		    //for ()
-		    //graphaddnode(graph, eid, seid, );
-		}
-	    }
-	}*/
+	    graphdepth(obj, graph);
     }
     viewer->Graph = graph;
     //associate the viewer with the form 
@@ -105,12 +60,38 @@ int main(int argc, char ** argv)
     return 0;
 }
 
+void graphdepth(RoseObject* obj, Microsoft::Msagl::Drawing::Graph^ graph, int depth)
+{
+    if (obj==nullptr) return;
+    if (maxdepth >=0 && depth > maxdepth) return;
+    if (obj->isa(ROSE_DOMAIN(RoseUnion)))
+    {
+	obj = rose_get_nested_object(ROSE_CAST(RoseUnion, obj));
+	if (nullptr == obj) return; //Select with a non-object type
+    }
+    if (obj->isa(ROSE_DOMAIN(RoseAggregate)))
+    {
+	if (nullptr == obj->getObject((unsigned)0))
+	{
+	    graphatts(obj, graph);//not an aggregate of objects.
+	    return;
+	}
+	for (unsigned j = 0, jsz = obj->size(); j < jsz; j++)
+	{
+	    graphdepth(obj->getObject(j), graph, depth + 1);
+	}
+    }
+    if (obj->isa(ROSE_DOMAIN(RoseStructure)))
+    {
+	graphatts(obj, graph);
+	for (unsigned i = 0, sz = obj->attributes()->size(); i < sz; i++)
+	{
+	    graphdepth(obj->getObject(obj->attributes()->get(i)), graph, depth + 1);
+	}
+    }
+}
 void graphatts(RoseObject* obj,Microsoft::Msagl::Drawing::Graph^ graph)
 {
-    if (obj->isa(ROSE_DOMAIN(stp_draughting_model)))
-    {
-	while (0);
-    }
     printf("Getting atts of Obj %s\n", obj->domain()->name());
     auto eid = obj->entity_id();
     for (auto i = 0u, sz = obj->attributes()->size(); i < sz; i++)
@@ -160,6 +141,8 @@ void graphaddnode(Microsoft::Msagl::Drawing::Graph^ graph, String^ out, String^ 
 {
     if (in == "name")
 	in = out + "_name";
+    if (in == "description")
+	in = out + "_description";
     Microsoft::Msagl::Drawing::Node^ nout = graph->FindNode(out);
     Microsoft::Msagl::Drawing::Node^ nin = graph->FindNode(in);
     if (!nout)
@@ -178,6 +161,8 @@ void graphaddnode(Microsoft::Msagl::Drawing::Graph^ graph, String^ out, String^ 
     edge->LabelText = name;
     if (in == out + "_name")
 	nin->LabelText = "name";
+    if (in == out + "_description")
+	nin->LabelText = "description";
     return;
 }
 
